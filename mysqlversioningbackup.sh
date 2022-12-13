@@ -1,12 +1,12 @@
 #!/bin/sh
 
-# Current Version: 6.1
+# Current Version: 6.1.1
 # Extracts database, table, all databases, all tables or tables matching on regular expression from the mysqldump.
 # Includes output compression options.
-# By: Kedar Vaijanapurkar
-# Website: http://kedar.nitty-witty.com/blog
+# By: Nick Muller - originally by Kedar Vaijanapurkar
+# Website: https://mullerdigital.com
 # Original Blog Post: http://kedar.nitty-witty.com/blog/mydumpsplitter-extract-tables-from-mysql-dump-shell-script
-# Follow GIT: https://github.com/kedarvj/mysqldumpsplitter/
+# Follow GIT: https://github.com/nicholasm/mysqlversioningbackup/
 
 ## Version Info:
 # Ver. 1.0: Feb 11, 2010
@@ -30,6 +30,9 @@
 # ... Bug fixing in describe functionality
 # ... Preserving time_zone & charset env settings in extracted sqls.
 # Credit: @PeterTheDBA helped understanding the possible issues with environment variable settings included in first 17 lines of mysqldump.
+# Ver. 6.1.1: Dec, 2022
+# ... Fork of original
+# ... Separates table value inputs by line
 ##
 
 # ToDo: Work with straming input
@@ -62,13 +65,13 @@ VERSION=6.1
 usage()
 {
         echo "\n\t\t\t\t\t\t\t${txtgrn}${txtund}************ Usage ************ \n"${txtrst};
-        echo "${txtgrn}sh mysqldumpsplitter.sh --source filename --extract [DB|TABLE|DBTABLES|ALLDBS|ALLTABLES|REGEXP] --match_str string --compression [gzip|pigz|bzip2|xz|pxz|none] --decompression [gzip|pigz|bzip2|xz|pxz|none] --output_dir [path to output dir] [--config /path/to/config] ${txtrst}"
+        echo "${txtgrn}sh mysqldumpsplitter.sh --source filename --extract [DB|TABLE|DBTABLES|ALLDBS|ALLTABLES|REGEXP|ALLTABLESSPACED] --match_str string --compression [gzip|pigz|bzip2|xz|pxz|none] --decompression [gzip|pigz|bzip2|xz|pxz|none] --output_dir [path to output dir] [--config /path/to/config] ${txtrst}"
         echo "${txtund}                                                    ${txtrst}"
         echo "OPTIONS:"
         echo "${txtund}                                                    ${txtrst}"
         echo "  --source: mysqldump filename to process. It could be a compressed or regular file."
         echo "  --desc: This option will list out all databases and tables."
-        echo "  --extract: Specify what to extract. Possible values DB, TABLE, ALLDBS, ALLTABLES, REGEXP"
+        echo "  --extract: Specify what to extract. Possible values DB, TABLE, ALLDBS, ALLTABLES, REGEXP, ALLTABLESSPACED"
         echo "  --match_str: Specify match string for extract command option."
         echo "  --compression: gzip/pigz/bzip2/xz/pxz/none (default: gzip). Extracted file will be of this compression."
         echo "  --decompression: gzip/pigz/bzip2/xz/pxz/none (default: gzip). This will be used against input file."
@@ -103,7 +106,7 @@ parse_result()
 
         ## Parse Extract Operation
         case $EXTRACT in
-                ALLDBS|ALLTABLES|DESCRIBE )
+                ALLDBS|ALLTABLES|ALLTABLESSPACED|DESCRIBE )
                         if [ "$MATCH_STR" != '' ]; then
                             echo "${txtylw}Ignoring option --match_string.${txtrst}"
                         fi;
@@ -307,6 +310,21 @@ dump_splitter()
 
                          #Extract table specific dump to tablename.sql
                          $DECOMPRESSION $SOURCE | sed -n "/^-- Table structure for table \`$tablename\`/,/^-- Table structure for table/p" | $COMPRESSION >> $OUTPUT_DIR/$tablename.$EXT
+                         TABLE_COUNT=$((TABLE_COUNT+1))
+                         echo "${txtbld}Table $tablename extracted from $DUMP_FILE at $OUTPUT_DIR/$tablename.$EXT${txtrst}"
+                        done;
+                         echo "${txtbld}Total $TABLE_COUNT tables extracted.${txtrst}"
+                        ;;   
+
+                ALLTABLESSPACED)
+
+                        for tablename in $($DECOMPRESSION $SOURCE | grep -a "Table structure for table " | awk -F"\`" {'print $2'})
+                        do
+                         # Include first 17 lines of standard mysqldump to preserve time_zone and charset.
+                         include_dump_info $tablename
+
+                         #Extract table specific dump to tablename.sql
+                         $DECOMPRESSION $SOURCE | sed -n "/^-- Table structure for table \`$tablename\`/,/^-- Table structure for table/p" | sed 's/)\,(/)\,\'$'\n(/g' | $COMPRESSION >> $OUTPUT_DIR/$tablename.$EXT
                          TABLE_COUNT=$((TABLE_COUNT+1))
                          echo "${txtbld}Table $tablename extracted from $DUMP_FILE at $OUTPUT_DIR/$tablename.$EXT${txtrst}"
                         done;
